@@ -126,11 +126,10 @@ assign o_nMTR123 = _mtr123;
 reg[31:0] mtr123Counter;
 reg [1:0] step_prev;
 reg [1:0] nDiskChange_r;
+reg [1:0] nIndexesDetected;
 
 
 assign o_nDiskChange = o_PinIBMDrive ? ((~i_nDriveSelect0) ? nDiskChange_r[0] : (~i_nDriveSelect1) ? nDiskChange_r[1] : 1'b1) : o_nPin2;
-	
-//assign o_nDiskChange =               o_PinIBMDrive ?      o_nPin34             :    o_nPin2            ;
 assign i_nPin14 = i_reset ? 1'b1 :  (o_PinIBMDrive ?      i_nDriveSelect0      :    i_nDriveSelect2   );
 assign i_nPin12 = i_reset ? 1'b1 :            i_nDriveSelect1;
 assign i_nPin10 = i_reset ? 1'b1 :  (o_PinIBMDrive ?      nDriveLatchedA       :    i_nDriveSelect0   );
@@ -173,6 +172,7 @@ always@(posedge i_core_cpu_clk)begin
 		_pendingmtr123 <= 1;
 		_nStep <= i_nStep;
 		_nDir <= i_nDir;
+		nIndexesDetected <= 2'h0;
 	end else begin		
 		
 		if (o_PinIBMDrive) begin
@@ -197,7 +197,7 @@ always@(posedge i_core_cpu_clk)begin
 				nDriveLatchedA <= i_nMotorEnable;
 				nDriveLatchedB <= i_nMotorEnable;
 			end
-			
+						
 			// DiskChange on PC drive triggers on FALLING edge of STEP, on Amiga drives its on RISING edge
 			if (~i_nDriveSelect0) begin
 				step_prev[0] <= i_nStep;
@@ -212,31 +212,37 @@ always@(posedge i_core_cpu_clk)begin
 			
 			// Ready is a little more complex as we have to simulate it.  Its HIGH until ready
 			if (~nDriveLatchedA) begin
+				if (~i_nDriveSelect0 && ~o_nIndex) nIndexesDetected[0] <= 1;				
+
 				if (motorTimerA != spinupTime) begin
 					motorTimerA = motorTimerA + 32'h1;
 					mtrAReady <= 1'b1;
 				end else
 				begin
-					mtrAReady <= i_nDriveSelect0;
+					mtrAReady <= nIndexesDetected[0] ? i_nDriveSelect0 : ~o_nDiskChange; // RDY shouldnt signal if theres no disk, so we allow this if indexes detected OR dskchange is valid
 				end
 			end else
 			begin
 				mtrAReady <= AmigaMode ? i_nDriveSelect0 : 1'b1;
 				motorTimerA <= 0;
+				if (~i_nDriveSelect0) nIndexesDetected[0] <= 0;
 			end
 			
 			if (~nDriveLatchedB) begin
+				if (~i_nDriveSelect1 && ~o_nIndex) nIndexesDetected[1] <= 1;
+				
 				if (motorTimerB != spinupTime) begin
 					motorTimerB = motorTimerB + 32'h1;
 					mtrBReady <= 1'b1;
 				end else
-				begin
-					mtrBReady <= i_nDriveSelect1;
+				begin					
+					mtrBReady <= nIndexesDetected[1] ? i_nDriveSelect1 : ~o_nDiskChange; // RDY shouldnt signal if theres no disk, so we allow this if indexes detected OR dskchange is valid
 				end
 			end else
 			begin
 				mtrBReady <= AmigaMode ? i_nDriveSelect1 : 1'b1;
 				motorTimerB <= 0;
+				if (~i_nDriveSelect1) nIndexesDetected[1] <= 0;
 			end
 							
 			_o_nReady <= ~((~mtrAReady) || (~mtrBReady));
