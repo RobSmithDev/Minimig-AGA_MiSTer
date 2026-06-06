@@ -416,6 +416,7 @@ wire        reset = sys_reset | ~_cpu_reset_in; // both tg68k and minimig_syscon
 //--------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------
 
+// DISABLED
 assign pwr_led = ~_led;
 
 assign memcfg = {memory_config[7],memory_config[5:0]};
@@ -826,6 +827,8 @@ gary GARY1
 	.rom_readonly(rom_readonly),
 	.bootrom(bootrom)
 );
+
+wire moo;
 
 gayle GAYLE1
 (

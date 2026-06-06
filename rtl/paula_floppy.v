@@ -230,8 +230,8 @@ assign _exsel[3] = (floppy_ext_drive[2:0]  == 3'd4) ? _sel[0] :
                    (floppy_ext_drive[11:9] == 3'd4) ? _sel[3] : 1'b1;
 
 assign sel_external    = ((~_exsel[0]) | (~_exsel[1]) | (~_exsel[2]) | (~_exsel[3])) & enable_mister_floppy;
-assign flux_inuse      = sel_external | disk_fluxmode[sel];
-assign virtualFloppyMode = disk_fluxmode[sel] & ~sel_external;
+assign flux_inuse      = sel_external | (disk_fluxmode[sel] & ~_selx);
+assign virtualFloppyMode = disk_fluxmode[sel] & ~sel_external & ~_selx;
 assign floppy_speed   = (reset | ~flux_inuse) ? floppy_speed_allowed : 1'b0;
 
 wire _virtReadData;
@@ -272,6 +272,7 @@ wire _dskrd;								// Flux data OUT from real floppy drive
 wire interfaceBusy;
 wire _dkwd;
 wire _dkwe;
+
 
 MiSTerFloppyPLL PaulaFloppyPLL (
 	.clk(clk),
@@ -652,6 +653,24 @@ end
 //dsklen zero detect
 assign lenzero = (dsklen[13:0]==0);
 
+
+// This generates fake data when no disk is selected to ensure DMA completes when NO drive is selected
+reg [7:0] no_sel_ctr;
+wire no_sel_word_clk = (no_sel_ctr == 8'd223);
+always @(posedge clk) begin
+    if (clk7_en) begin
+        if (_selx & trackrd & dmaon) begin
+            if (no_sel_word_clk)
+                no_sel_ctr <= 8'd0;
+            else
+                no_sel_ctr <= no_sel_ctr + 8'd1;
+        end else
+            no_sel_ctr <= 8'd0;
+    end
+end
+
+
+
 //--------------------------------------------------------------------------------------
 //disk data read path
 wire	busrd;				//bus read
@@ -670,11 +689,15 @@ wire stbdat = cmd_fdd && stb7 && &cmd_cnt;
 
 
 // fifo data input multiplexer  (rx_data=from mister, data_in=from bus)
-assign fifo_in[15:0] = (trackrd|virtualFloppyMode) ? rx_data[15:0] : data_in[15:0];
+assign fifo_in[15:0] = _selx ? 16'h0000 : ((trackrd|virtualFloppyMode) ? rx_data[15:0] : data_in[15:0]);
 assign flux_fifo_in[15:0] = trackrd ? ext_floppy_rx[15:0] : data_in[15:0];
 
 wire paula_fifo_wr;
-assign paula_fifo_wr = virtualFloppyMode ? stbdat : (flux_inuse ? 1'b0 : (trackrdok & stbdat & ~lenzero) | (buswr & dmaon));
+assign paula_fifo_wr = virtualFloppyMode ? stbdat : 
+                       (flux_inuse ? 1'b0 :
+                       (_selx & trackrdok & no_sel_word_clk & ~lenzero) |   // this makes DMA complete properly if it was triggered and nothing is selected
+                       (trackrdok & stbdat & ~lenzero) | 
+                       (buswr & dmaon));
 
 //fifo read control (read a WORD FROM the FIFO)
 wire paula_fifo_rd;
@@ -807,7 +830,7 @@ always @(posedge clk) begin
 end
 
 //disk activity LED
-assign fdd_led = (dskstate!=DISKDMA_IDLE);
+assign fdd_led =  (dskstate!=DISKDMA_IDLE);
 
 //main disk state machine
 always @(posedge clk) begin
@@ -818,6 +841,7 @@ always @(posedge clk) begin
   		dskstate <= nextstate;
   end
 end
+
 
 wire fifo_wr_delay;
 assign fifo_wr_delay = flux_inuse ? ext_floppy_rd_del : fifo_wr_del;
