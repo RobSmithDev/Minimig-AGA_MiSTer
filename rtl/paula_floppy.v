@@ -396,8 +396,23 @@ always @(posedge clk) begin
 end
 
 
+
+// Virtual floppy head settling timer (~12ms at clk7_en rate)
+// When the head moves, according to Commodore spec, upto 15ms of head settling time is allowed. We use this to prevent the core streaming data to us when not needed during step operations
+reg [16:0] vfloppy_settle_cnt;
+wire vfloppy_settling = virtualFloppyMode & (vfloppy_settle_cnt != 17'd0);
+always @(posedge clk) begin
+    if (clk7_en) begin
+        if (virtualFloppyMode && _step && !_step_del)
+            vfloppy_settle_cnt <= 17'd107550;     // 15ms
+        else if (vfloppy_settle_cnt != 15'd0)
+            vfloppy_settle_cnt <= vfloppy_settle_cnt - 17'd1;
+    end
+end
+
+wire hostRead = sel_external ? 1'b0 : (((trackrd | virtualFloppyRequestsData) & ~vfloppy_settling) & ~fifo_cnt[10]);
+
 //transmit data multiplexer
-wire hostRead = sel_external ? 1'b0 : ((trackrd | virtualFloppyRequestsData)&~fifo_cnt[10]);
 always @(*) begin
 	casex ({cmd_cnt, cmd_fdd, hostRead,  sel_external ? 1'b0 : trackwr })
 		
@@ -473,11 +488,12 @@ assign data_out = dskbytr | dskdatr;
 
 //active whenever any drive is selected
 assign _selx = &_sel[3:0];
+reg virtualFloppyTrackReset = 0;
 
 // delayed step signal for detection of its rising edge 
 always @(posedge clk) begin
   if (clk7_en) begin
-    _step_del <= _step;
+    _step_del <= _step;	 
   end
 end
 
@@ -726,10 +742,9 @@ always @(posedge clk) begin
 	if (clk7_en) begin
 		_virtualFloppyFifoResetLastSel <= _sel;
 		lastVirtualFloppyMode <= virtualFloppyMode;		
-		virtualFloppyFifoReset = ((_virtualFloppyFifoResetLastSel != _sel) && (virtualFloppyMode | lastVirtualFloppyMode));
+		virtualFloppyFifoReset = (((_virtualFloppyFifoResetLastSel != _sel) && (virtualFloppyMode | lastVirtualFloppyMode))) | (_step && !_step_del);
 	end
 end
-		
 		
 
 wire flux_fifo_reset;
@@ -843,6 +858,8 @@ always @(posedge clk) begin
 end
 
 
+
+
 wire fifo_wr_delay;
 assign fifo_wr_delay = flux_inuse ? ext_floppy_rd_del : fifo_wr_del;
 
@@ -854,9 +871,9 @@ always @(*) begin
 			trackwr = 0;
 			dmaon = 0;
 			blckint = 0;
-			// TODO: CHECK (~_flux_inuse) here
-			if (((cmd_fdd && stb7 && cmd_cnt==1) || (flux_inuse)) && dmaen && !lenzero && enable)//dsklen>0 and dma enabled, do disk dma operation
-			//if ((cmd_fdd && stb7 && cmd_cnt==1) || (~_flux_inuse)) && dmaen && !lenzero && enable)//dsklen>0 and dma enabled, do disk dma operation
+			// This shouldnt check lenzero. Its valid to start DMA with lenzero, and is done with some variants of Rob Northen Copylock. Without this, the check fails.
+			if (((cmd_fdd && stb7 && cmd_cnt==1) || (flux_inuse)) && dmaen && enable)			
+			//if (((cmd_fdd && stb7 && cmd_cnt==1) || (flux_inuse)) && dmaen && (!lenzero || flux_inuse) && enable)
 				nextstate = DISKDMA_ACTIVE; 
 			else
 				nextstate = DISKDMA_IDLE;			

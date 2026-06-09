@@ -14,8 +14,6 @@ Data format is WORDS, each BYTE in the word is:
 	0=INDEX
 	1=Simple delay of 1/7mhz
 	2=Disable actual flux transition on next byte
-	             (DISABLED and NOT IN USE) 
-   CURRENTLY COMMENTED OUT as NOT NEEDED: 3=Enable weak-bit generator for duration specified in next byte
 	>2 Time until flux transition at 7mhz clock (ie: 7=1us). 
 */
 
@@ -68,25 +66,9 @@ assign fluxDataRead = fluxDataReadOut;
 reg[12:0] indexCounter;
 assign _Index = indexCounter == 13'h1FFF;
 
-/*
-// Used for simulating weak-no flux areas
-reg [7:0] randomNumber;
-wire [5:0] s_raw  = randomNumber[5:0];                    // 0..63
-wire [5:0] s_clip = (s_raw <= 6'd50) ? s_raw : {1'b0, s_raw[4:0]};
-
-reg[6:0] lastNoise;
-reg triggerWeakBits;
-wire weakBitGeneratorReady = lastNoise[6];   // ~9.14 µs
-*/
-
-
 // This is for double density only. 
 always@(posedge clk) begin
 	if (clk7_en) begin  // 14 clocks is 2uS
-/*	
-		// Advance the random number generator used by the random flux noise thing
-		randomNumber <= {randomNumber[6:0], randomNumber[7] ^ randomNumber[5] ^ randomNumber[4] ^ randomNumber[3]};
-*/
 		delayDrivesSelect <= drivesSelect;
 
 		if (reset) begin	
@@ -104,10 +86,6 @@ always@(posedge clk) begin
 			floppyDriveBitCounter <= 2'h3;
 			usingNextByte <= 1;
 			triggerFlux <= 1;
-/*			
-			randomNumber <= 8'h1;
-			triggerWeakBits <= 0;
-*/			
 		end else begin							
 			integer id;
 			// This isn't quite right, as driveId is faster than 7mhz, but it works for what we need.
@@ -119,8 +97,6 @@ always@(posedge clk) begin
 					if (motorTimer[id] != 3_500_000) begin    // that's 500ms, standard spinup time
 						motorTimer[id] <= motorTimer[id] + 22'h1;
 						mtrReady[id] <= 1'b1;
-						//triggerWeakBits <= 0;
-						//lastNoise <= 7'h0;
 					end else begin 
 						mtrReady[id] <= ~drivesSelect[id]; 
 					end
@@ -139,9 +115,6 @@ always@(posedge clk) begin
 				indexCounter <= 13'h1FFF;
 				floppyDriveBitCounter <= 2'h3;
 				usingNextByte <= 1;
-/*				
-				triggerWeakBits <= 0;
-*/				
 			end
 						
 			// which drive is selected?
@@ -158,9 +131,6 @@ always@(posedge clk) begin
 			
 			// This isn't quite right, as data should always be ticking, but typically the "READ" data is HIGH until the drive is ready
 			if (~_o_nReady & ~nDriveLatched[driveSelected]) begin				
-				// Track how long it's been since a flux transition occured
-				//if (~weakBitGeneratorReady) lastNoise <= lastNoise + 7'h1;
-
 				if (ticksUntilNextFlux == 0) begin
 					triggerFlux <= 1;									// Future transitions should trigger flux events unless overridden	
 					if (usingNextByte) begin					
@@ -176,16 +146,8 @@ always@(posedge clk) begin
 											triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
 											ticksUntilNextFlux <= 0;
 									end
-/*									
-								8'd3: begin
-											triggerWeakBits <= 1;      // Next timing is how long to trigger weak bits for
-											ticksUntilNextFlux <= 0;
-											lastNoise <= {2'b010, randomNumber[5:1]};
-										end	
-*/										
 								default: begin
-												if (triggerFlux/* & ~triggerWeakBits*/) floppyDriveBitCounter <= 2'h0;
-												//triggerWeakBits <= 0;
+												if (triggerFlux) floppyDriveBitCounter <= 2'h0;
 											end
 							endcase
 						end else
@@ -202,16 +164,8 @@ always@(posedge clk) begin
 											triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
 											ticksUntilNextFlux <= 0;
 									end
-/*									
-								8'd3: begin
-											triggerWeakBits <= 1;      // Next timing is how long to trigger weak bits for
-											ticksUntilNextFlux <= 0;
-											lastNoise <= {2'b010, randomNumber[5:1]};											
-									end	
-*/									
 								default: begin
-												if (triggerFlux/* & ~triggerWeakBits*/) floppyDriveBitCounter <= 2'h0;													
-												//triggerWeakBits <= 0;
+												if (triggerFlux) floppyDriveBitCounter <= 2'h0;													
 											end
 						endcase
 						usingNextByte <= 1;				
@@ -219,16 +173,6 @@ always@(posedge clk) begin
 				end else
 				begin
 					ticksUntilNextFlux <= ticksUntilNextFlux - 8'h01;
-/*					
-					// No flux for ~150us. Start to produce noise/weak data 
-					if (triggerWeakBits & weakBitGeneratorReady) begin
-						if (randomNumber[0]) begin
-							// Simulate fake pulse
-							floppyDriveBitCounter <= 2'h0;
-							lastNoise <= {1'b0, s_clip};
-						end						
-					end
-*/					
 				end
 			end
 		end
