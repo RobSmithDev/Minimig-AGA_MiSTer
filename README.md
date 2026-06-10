@@ -31,6 +31,8 @@ This version has been modified to add support for MiSTer Floppy, SCP and IPF sup
 * MIDI: both MiSTer internal emulation and external through USER_IO port (MT32-pi and generic MIDI device)
 * Akiko chunk to planar implementation
 * Mouse with wheel.
+* SCP and IPF files
+* MiSTer Floppy Hardware
 
 ## Usage
 
