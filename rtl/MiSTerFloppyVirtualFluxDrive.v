@@ -15,6 +15,11 @@ Data format is WORDS, each BYTE in the word is:
 	1=Simple delay of 1/7mhz
 	2=Disable actual flux transition on next byte
 	>2 Time until flux transition at 7mhz clock (ie: 7=1us). 
+	
+If densityMode is enabled, the data format changes to MFM+density mode. Each WORD consists of:
+	High byte: 8 MFM bits, MSB first, where a 1 indicates a flux transition
+	Low byte:  Bit clock period in 28MHz ticks per bit cell (0=INDEX marker, ~54=fast, ~57=normal, ~60=slow)
+	
 */
 
 module MiSTerFloppyVirtualFluxDrive (
@@ -24,6 +29,7 @@ module MiSTerFloppyVirtualFluxDrive (
 	input enabled,
 
 	input [3:0] drivesSelect,   				  // Selected when set to 0, hence the 'n'	
+	input [3:0] densityMode,					  // Density vs Flux mode
 	input [1:0] driveSelected,					  // drive NUMBER selected
 	
 	input nMotorEnabled,							  // If the motor is enabled
@@ -66,8 +72,48 @@ assign fluxDataRead = fluxDataReadOut;
 reg[12:0] indexCounter;
 assign _Index = indexCounter == 13'h1FFF;
 
+
+
+// for density mode
+reg [7:0] current_mfm;
+reg [7:0] current_density;
+reg [7:0] staged_mfm;
+reg [7:0] staged_density;
+reg staged_valid;
+reg [2:0] bit_pos;          // 0-7, which bit of current_mfm
+reg [7:0] bit_counter;      // 28MHz counter
+
+
 // This is for double density only. 
 always@(posedge clk) begin
+
+	if (densityMode[driveSelected] & ~_o_nReady & ~nDriveLatched[driveSelected]) begin
+		// Density mode works at the 28mhz domain
+		if (bit_counter == 0) begin
+			  bit_counter <= current_density;
+			  
+			  if (current_mfm[bit_pos]) floppyDriveBitCounter <= 2'h0;
+						 
+			  bit_pos <= bit_pos - 1;
+			  if (bit_pos == 0) begin
+					// swap in staged
+					staged_valid <= 0;  // signal 7MHz to fetch next
+					
+					if (staged_density == 0) begin
+						indexCounter <= 0; 
+						current_mfm <= 0;
+						current_density <= 8'd57;
+						bit_pos <= 1; // re-rigger
+					end else begin
+						 current_density <= staged_density;
+						 current_mfm <= staged_mfm;
+					end
+			  end
+		 end else begin
+			  bit_counter <= bit_counter - 1;
+		 end
+	end
+
 	if (clk7_en) begin  // 14 clocks is 2uS
 		delayDrivesSelect <= drivesSelect;
 
@@ -85,7 +131,13 @@ always@(posedge clk) begin
 			indexCounter <= 13'h1FFF;
 			floppyDriveBitCounter <= 2'h3;
 			usingNextByte <= 1;
-			triggerFlux <= 1;
+			triggerFlux <= 1;	
+			staged_valid <= 0;
+			bit_pos <= 3'd7;
+			staged_valid <= 1'b0;
+			current_density <= 8'd57;  // nominal 2us at 28MHz
+			bit_counter <= 8'd0;
+			current_mfm <= 8'd0;
 		end else begin							
 			integer id;
 			// This isn't quite right, as driveId is faster than 7mhz, but it works for what we need.
@@ -107,16 +159,27 @@ always@(posedge clk) begin
 				end
 			end	
 			
+			fluxDataReadOut <= 1'b0;
+			
 			// Handle a fifo reset
 			if (fifo_reset) begin
-				fluxDataReadOut <= 0;
 				ticksUntilNextFlux <= 0;
 				nextFluxByte <= 8'h1C;   // kind of a 4us pulse
 				indexCounter <= 13'h1FFF;
 				floppyDriveBitCounter <= 2'h3;
 				usingNextByte <= 1;
 			end
-						
+			
+			if (densityMode[driveSelected]) begin
+				if (!staged_valid) begin
+					// fetch from FIFO
+					staged_mfm <= fluxDataIn[15:8];
+					staged_density <= fluxDataIn[7:0];
+					staged_valid <= 1;
+					fluxDataReadOut <= 1'b1;
+			   end
+			end
+									
 			// which drive is selected?
 			_o_nReady <= (enabled & drivesSelect[driveSelected]) ? mtrReady[driveSelected] : 1'b1;
 			// Special flag if this is ready to start receiving data (~50ms before READY is set)
@@ -124,13 +187,11 @@ always@(posedge clk) begin
 					
 			// Index counter!
 			if (!_Index) indexCounter <= indexCounter + 13'h1;
-			fluxDataReadOut <= 1'b0;
 			
-			if (~floppyBit) floppyDriveBitCounter <= floppyDriveBitCounter + 2'h1;	
-			
+			if (~floppyBit) floppyDriveBitCounter <= floppyDriveBitCounter + 2'h1;				
 			
 			// This isn't quite right, as data should always be ticking, but typically the "READ" data is HIGH until the drive is ready
-			if (~_o_nReady & ~nDriveLatched[driveSelected]) begin				
+			if (~densityMode[driveSelected] & ~_o_nReady & ~nDriveLatched[driveSelected]) begin				
 				if (ticksUntilNextFlux == 0) begin
 					triggerFlux <= 1;									// Future transitions should trigger flux events unless overridden	
 					if (usingNextByte) begin					

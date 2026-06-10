@@ -171,6 +171,7 @@ reg  [15:0] wr_fifo_status;
 reg   [3:0] disk_present;	//disk present status
 reg   [3:0] disk_writable;	//disk write access status
 reg   [3:0] disk_fluxmode; // disk data isn't MFM, its raw flux, encoded at 50ns resolution. 0=INDEX, 255=12.7uS/254, 2 Flux per WORD. 
+reg   [3:0] disk_fluxdensitymode; // disk data is MFM + speed for those 8 bits (similar to IPF format and a bit like how Winuae works)
 
 wire        _selx;			//active whenever any drive is selected
 wire  [1:0] sel;				//selected drive number
@@ -230,8 +231,8 @@ assign _exsel[3] = (floppy_ext_drive[2:0]  == 3'd4) ? _sel[0] :
                    (floppy_ext_drive[11:9] == 3'd4) ? _sel[3] : 1'b1;
 
 assign sel_external    = ((~_exsel[0]) | (~_exsel[1]) | (~_exsel[2]) | (~_exsel[3])) & enable_mister_floppy;
-assign flux_inuse      = sel_external | (disk_fluxmode[sel] & ~_selx);
-assign virtualFloppyMode = disk_fluxmode[sel] & ~sel_external & ~_selx;
+assign flux_inuse      = sel_external | ((disk_fluxmode[sel]|disk_fluxdensitymode[sel]) & ~_selx);
+assign virtualFloppyMode = (disk_fluxmode[sel]|disk_fluxdensitymode[sel]) & ~sel_external & ~_selx;
 assign floppy_speed   = (reset | ~flux_inuse) ? floppy_speed_allowed : 1'b0;
 
 wire _virtReadData;
@@ -248,6 +249,7 @@ MiSTerFloppyVirtualFluxDrive virtualFloppy (
 	
 	.enabled(virtualFloppyMode),
 	.drivesSelect( disk_fluxmode & ~_sel),   // note its NOT inverted
+	.densityMode(disk_fluxdensitymode),
 	.driveSelected( sel),							// Index of selected drive
 	.nMotorEnabled(_motor),
 	.o_nReady(_virtualFluxDataReady),
@@ -308,9 +310,6 @@ MiSTerFloppyPLL PaulaFloppyPLL (
 	._writeData(_dkwd),										// Output MFM writing (WRITE_DATA)
 	._writeGate(_dkwe) 			// Output ENABLE (WRITE_GATE)
 );
-
-
-
 
 // NTSC Amigas had 28.63636 clock whereas PAL Amigas had 28.37516Mhz clocks
 // The Minimig core is actually set to 28.687500MHz - not sure why!
@@ -838,9 +837,11 @@ parameter DISKDMA_INT    = 2'b11;
 always @(posedge clk) begin
   if (clk7_en) begin
   	if(reset)
-  		{disk_fluxmode[3:0], disk_writable[3:0],disk_present[3:0]} <= 12'b0000_0000_0000;
+  		{disk_fluxdensitymode[3:0], disk_fluxmode[3:0], disk_writable[3:0],disk_present[3:0]} <= 16'b0000_0000_0000_0000;
   	else if (rx_data[15:12]==4'b0001 && stb7 && !cmd_cnt)
 		{disk_fluxmode[3:0], disk_writable[3:0],disk_present[3:0]} <= rx_data[11:0];		
+	else if (rx_data[15:12]==4'b0010 && stb7 && !cmd_cnt)
+		{disk_fluxdensitymode[3:0]} <= rx_data[3:0];		
   end
 end
 
