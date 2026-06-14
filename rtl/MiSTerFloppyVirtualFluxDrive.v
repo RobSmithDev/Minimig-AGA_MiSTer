@@ -12,9 +12,9 @@ The output should be fed into MiSTerFloppyPLL
 
 Data format is WORDS, each BYTE in the word is: 
 	0=INDEX
-	1=Simple delay of 1/7mhz
+	1=Simple delay of 1/28mhz
 	2=Disable actual flux transition on next byte
-	>2 Time until flux transition at 7mhz clock (ie: 7=1us). 
+	>2 Time until flux transition at 28mhz clock 
 	
 If densityMode is enabled, the data format changes to MFM+density mode. Each WORD consists of:
 	High byte: 8 MFM bits, MSB first, where a 1 indicates a flux transition
@@ -83,35 +83,83 @@ reg staged_valid;
 reg [2:0] bit_pos;          // 0-7, which bit of current_mfm
 reg [7:0] bit_counter;      // 28MHz counter
 
-
 // This is for double density only. 
 always@(posedge clk) begin
 
-	if (densityMode[driveSelected] & ~_o_nReady & ~nDriveLatched[driveSelected]) begin
-		// Density mode works at the 28mhz domain
-		if (bit_counter == 0) begin
-			  bit_counter <= current_density;
-			  
-			  if (current_mfm[bit_pos]) floppyDriveBitCounter <= 2'h0;
-						 
-			  bit_pos <= bit_pos - 1;
-			  if (bit_pos == 0) begin
-					// swap in staged
-					staged_valid <= 0;  // signal 7MHz to fetch next
-					
-					if (staged_density == 0) begin
-						indexCounter <= 0; 
-						current_mfm <= 0;
-						current_density <= 8'd57;
-						bit_pos <= 1; // re-rigger
-					end else begin
-						 current_density <= staged_density;
-						 current_mfm <= staged_mfm;
+	if (~_o_nReady & ~nDriveLatched[driveSelected]) begin
+	
+		if (densityMode[driveSelected]) begin
+	
+			// Density mode works at the 28mhz domain
+			if (bit_counter == 0) begin
+				  bit_counter <= current_density;
+				  
+				  if (current_mfm[bit_pos]) floppyDriveBitCounter <= 2'h0;
+							 
+				  bit_pos <= bit_pos - 1;
+				  if (bit_pos == 0) begin
+						// swap in staged
+						staged_valid <= 0;  // signal 7MHz to fetch next
+						
+						if (staged_density == 0) begin
+							indexCounter <= 0; 
+							current_mfm <= 0;
+							current_density <= 8'd57;
+							bit_pos <= 1; // re-rigger
+						end else begin
+							 current_density <= staged_density;
+							 current_mfm <= staged_mfm;
+						end
+				  end
+			 end else begin
+				  bit_counter <= bit_counter - 1;
+			 end
+		end else begin
+			// Pure flux mode
+			if (ticksUntilNextFlux == 0) begin
+				triggerFlux <= 1;									// Future transitions should trigger flux events unless overridden	
+				if (usingNextByte) begin
+					if (staged_valid) begin
+						ticksUntilNextFlux  <= staged_density;
+						nextFluxByte <= staged_mfm;
+						staged_valid <= 0;
+						usingNextByte <= 0;	
+						case (staged_density)
+							8'd0: indexCounter <= 0;  			// trigger index marker
+							8'd1: ticksUntilNextFlux <= 0; 	// Delay by 1 clock
+							8'd2: begin
+										triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
+										ticksUntilNextFlux <= 0;
+								end
+							default: begin
+											if (triggerFlux) floppyDriveBitCounter <= 2'h0;
+										end
+						endcase
+					end else
+					begin
+						ticksUntilNextFlux <= 8'hFF;  // shouldn't happen
 					end
-			  end
-		 end else begin
-			  bit_counter <= bit_counter - 1;
-		 end
+				end else
+				begin
+					ticksUntilNextFlux <= nextFluxByte;						
+					case (nextFluxByte)
+							8'd0: indexCounter <= 0;  			// trigger index marker
+							8'd1: ticksUntilNextFlux <= 0; 	// Delay by 1 clock
+							8'd2: begin
+										triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
+										ticksUntilNextFlux <= 0;
+								end
+							default: begin
+											if (triggerFlux) floppyDriveBitCounter <= 2'h0;													
+										end
+					endcase
+					usingNextByte <= 1;				
+				end
+			end else
+			begin
+				ticksUntilNextFlux <= ticksUntilNextFlux - 8'h01;
+			end			
+		end
 	end
 
 	if (clk7_en) begin  // 14 clocks is 2uS
@@ -170,14 +218,12 @@ always@(posedge clk) begin
 				usingNextByte <= 1;
 			end
 			
-			if (densityMode[driveSelected]) begin
-				if (!staged_valid) begin
-					// fetch from FIFO
-					staged_mfm <= fluxDataIn[15:8];
-					staged_density <= fluxDataIn[7:0];
-					staged_valid <= 1;
-					fluxDataReadOut <= 1'b1;
-			   end
+			if (!staged_valid) begin
+				// fetch from FIFO
+				staged_mfm <= fluxDataIn[15:8];
+				staged_density <= fluxDataIn[7:0];
+				staged_valid <= 1;
+				fluxDataReadOut <= 1'b1;
 			end
 									
 			// which drive is selected?
@@ -186,56 +232,8 @@ always@(posedge clk) begin
 			oRequestDataReg <= enabled & drivesSelect[driveSelected] & ~nDriveLatched[driveSelected] & (motorTimer[driveSelected][21:20]==2'b11);
 					
 			// Index counter!
-			if (!_Index) indexCounter <= indexCounter + 13'h1;
-			
+			if (!_Index) indexCounter <= indexCounter + 13'h1;			
 			if (~floppyBit) floppyDriveBitCounter <= floppyDriveBitCounter + 2'h1;				
-			
-			// This isn't quite right, as data should always be ticking, but typically the "READ" data is HIGH until the drive is ready
-			if (~densityMode[driveSelected] & ~_o_nReady & ~nDriveLatched[driveSelected]) begin				
-				if (ticksUntilNextFlux == 0) begin
-					triggerFlux <= 1;									// Future transitions should trigger flux events unless overridden	
-					if (usingNextByte) begin					
-						if (~fifo_empty) begin			
-							ticksUntilNextFlux <= fluxDataIn[7:0];
-							nextFluxByte <= fluxDataIn[15:8];
-							fluxDataReadOut <= 1'b1;
-							usingNextByte <= 0;							
-							case (fluxDataIn[7:0])
-								8'd0: indexCounter <= 0;  			// trigger index marker
-								8'd1: ticksUntilNextFlux <= 0; 	// Delay by 1 clock
-								8'd2: begin
-											triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
-											ticksUntilNextFlux <= 0;
-									end
-								default: begin
-												if (triggerFlux) floppyDriveBitCounter <= 2'h0;
-											end
-							endcase
-						end else
-						begin
-							ticksUntilNextFlux <= 8'hFF;  // shouldn't happen
-						end
-					end else
-					begin
-						ticksUntilNextFlux <= nextFluxByte;						
-						case (nextFluxByte)
-								8'd0: indexCounter <= 0;  			// trigger index marker
-								8'd1: ticksUntilNextFlux <= 0; 	// Delay by 1 clock
-								8'd2: begin
-											triggerFlux <= 0;   			// Next timing, DON'T trigger a flux transition, its just a delay
-											ticksUntilNextFlux <= 0;
-									end
-								default: begin
-												if (triggerFlux) floppyDriveBitCounter <= 2'h0;													
-											end
-						endcase
-						usingNextByte <= 1;				
-					end
-				end else
-				begin
-					ticksUntilNextFlux <= ticksUntilNextFlux - 8'h01;
-				end
-			end
 		end
 	end
 end
