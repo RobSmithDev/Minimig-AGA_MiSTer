@@ -420,16 +420,16 @@ end
 reg [7:0] cmd;
 
 // reg selects
-wire mem_write_sel    	= (cmd[3:0] == 0); // A_A_A_A B,B,... || write system memory, A - 32 bit memory address, B - variable number of bytes
-wire reset_ctrl_sel   	= (cmd[3:0] == 1); // XXXXHRBC || reset control   | H - CPU halt, R - reset, B - reset to bootloader, C - reset control block
-wire aud_sel          	= (cmd[3:0] == 2);
-wire chip_cfg_sel     	= (cmd[3:0] == 3); // XXXGEANT || chipset config  | G - AGA, E - ECS, A - OCS A1000, N - NTSC, T - turbo
-wire cpu_cfg_sel      	= (cmd[3:0] == 4); // XXXXKCTT || cpu config      | K - fast kickstart enable, C - CPU cache enable, TT - CPU type (00=68k, 01=68k10, 10=68k20)
-wire memory_cfg_sel   	= (cmd[3:0] == 5); // XHFFSSCC || memory config   | H - HRTmon, FF - fast, SS - slow, CC - chip
-wire video_cfg_sel    	= (cmd[3:0] == 6); // DDHHLLSS || video config    | DD - dither, HH - hires interp. filter, LL - lowres interp. filter, SS - scanline mode
-wire floppy_cfg_sel   	= (cmd[3:0] == 7); // XXXXXFFS || floppy config   | FF - drive number, S - floppy speed
-wire harddisk_cfg_sel 	= (cmd[3:0] == 8); // XXXXXSMC || harddisk config | S - enable slave HDD, M - enable master HDD, C - enable HDD controler
-wire joystick_cfg_sel 	= (cmd[3:0] == 9); // XXXXSMMX || joystick config | S - swap joysticks, MM - dig/analog/cd32
+wire mem_write_sel    = (cmd[3:0] == 0); // A_A_A_A B,B,... || write system memory, A - 32 bit memory address, B - variable number of bytes
+wire reset_ctrl_sel   = (cmd[3:0] == 1); // XXXXHRBC || reset control   | H - CPU halt, R - reset, B - reset to bootloader, C - reset control block
+wire aud_sel          = (cmd[3:0] == 2);
+wire chip_cfg_sel     = (cmd[3:0] == 3); // XXXGEANT || chipset config  | G - AGA, E - ECS, A - OCS A1000, N - NTSC, T - turbo
+wire cpu_cfg_sel      = (cmd[3:0] == 4); // XXXXKCTT || cpu config      | K - fast kickstart enable, C - CPU cache enable, TT - CPU type (00=68k, 01=68k10, 10=68k20)
+wire memory_cfg_sel   = (cmd[3:0] == 5); // XHFFSSCC || memory config   | H - HRTmon, FF - fast, SS - slow, CC - chip
+wire video_cfg_sel    = (cmd[3:0] == 6); // DDHHLLSS || video config    | DD - dither, HH - hires interp. filter, LL - lowres interp. filter, SS - scanline mode
+wire floppy_cfg_sel   = (cmd[3:0] == 7); // XXXXXFFS || floppy config   | FF - drive number, S - floppy speed
+wire harddisk_cfg_sel = (cmd[3:0] == 8); // XXXXXSMC || harddisk config | S - enable slave HDD, M - enable master HDD, C - enable HDD controler
+wire joystick_cfg_sel = (cmd[3:0] == 9); // XXXXSMMX || joystick config | S - swap joysticks, MM - dig/analog/cd32
 wire floppyex01_cfg_sel = (cmd[3:0] == 10);// XXAAABBB || External floppy config, AAA/BBB is drive number (1-4) or 0 for disabled
 wire floppyex23_cfg_sel = (cmd[3:0] == 11);// XXCCCDDD || External floppy config, CCC/DDD is drive number (1-4) or 0 for disabled
 wire userport_cfg_sel   = (cmd[3:0] == 12);// xxxxxxxm || User port mode - 0: MT32pi, 1: MiSTer Floppy

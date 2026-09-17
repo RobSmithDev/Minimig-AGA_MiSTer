@@ -913,8 +913,6 @@ gary GARY1
 	.bootrom(bootrom)
 );
 
-wire moo;
-
 gayle GAYLE1
 (
 	.clk(clk),
