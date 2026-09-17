@@ -17,8 +17,6 @@ assign HDMI_FREEZE = 0;
 assign HDMI_BLACKOUT = 0;
 assign HDMI_BOB_DEINT = 0;
 
-reg [2:0] mister_floppy_status;
-
 `include "build_id.v" 
 localparam CONF_STR = {
 	"Minimig;UART115200:230400,MIDI;",
@@ -70,6 +68,8 @@ wire [21:0] gamma_bus;
 
 wire  [7:0] uart_mode;
 
+reg [2:0] mister_floppy_status;
+
 hps_io #(.CONF_STR(CONF_STR), .CONF_STR_BRAM(0)) hps_io
 (
 	.clk_sys(clk_sys),
@@ -86,7 +86,7 @@ hps_io #(.CONF_STR(CONF_STR), .CONF_STR_BRAM(0)) hps_io
 	.joystick_3(JOY3),
 	.joystick_l_analog_0(JOYA0),
 	.joystick_l_analog_1(JOYA1),
-	
+
 	.ioctl_wait(io_wait),
 
 	.buttons(buttons),
@@ -520,7 +520,7 @@ chipdma_arb chipdma_arb
 
 wire [15:0] ram_dout2;
 wire        ram_ready2;
-   
+
 ddram_ctrl ram2
 (
 	.sysclk       (clk_114         ),
@@ -540,7 +540,7 @@ ddram_ctrl ram2
 	.DDRAM_DIN    (DDRAM_DIN       ),
 	.DDRAM_BE     (DDRAM_BE        ),
 	.DDRAM_WE     (DDRAM_WE        ),
-	
+
 	.mem2_address      (a2065_mem_address),
 	.mem2_burstcount   (a2065_mem_burstcount),
 	.mem2_read         (a2065_mem_read),
@@ -550,7 +550,7 @@ ddram_ctrl ram2
 	.mem2_byteenable   (a2065_mem_byteenable),
 	.mem2_write        (a2065_mem_write),
 	.mem2_waitrequest  (a2065_mem_waitrequest),
-	
+
 	.cpuWR        (ram_din         ),
 	.cpuAddr      (ram_addr        ),
 	.cpuU         (ram_uds         ),
@@ -711,14 +711,15 @@ wire  [5:0] ide_c_req;
 wire [15:0] ide_c_readdata;
 wire        ide_c_led;
 wire        ide_ena;
-wire        user_port_mode;
 
 wire [15:0] toccata_aud_left;
 wire [15:0] toccata_aud_right;
 
-wire [6:0] IndirectUserOutmt32;
-wire [6:0] IndirectUserOutFlop;
+wire [6:0]  IndirectUserOutmt32;
+wire [6:0]  IndirectUserOutFlop;
+wire        user_port_mode;
 assign USER_OUT = user_port_mode ? IndirectUserOutFlop : IndirectUserOutmt32;
+
 
 minimig minimig
 (
@@ -823,7 +824,7 @@ minimig minimig
 	.a2065_base (a2065_base),
 	.toccata_aud_left (toccata_aud_left),
 	.toccata_aud_right(toccata_aud_right),
-	
+
 	.cdtv_mode           (cdtv_mode            ),
 
 	.cdtv_din            (cdtv_din_w           ),
@@ -855,11 +856,11 @@ minimig minimig
 	.cdtv_card_dirty     (cdtv_card_dirty      ),
 
 	.cdtv_cdda_volume    (cdtv_cdda_volume     ),
-	.cdtv_cdda_volume_valid(cdtv_cdda_volume_valid),	
-	
+	.cdtv_cdda_volume_valid(cdtv_cdda_volume_valid),
+
 	//user i/o
+	.cachecfg     (cachecfg         ), // Cache c
 	.cpucfg       (cpucfg           ), // CPU config
-	.cachecfg     (cachecfg         ), // Cache config
 	.memcfg       (memcfg           ), // memory config
 	.bootrom      (bootrom          ), // bootrom mode. Needed here to tell tg68k to also mirror the 256k Kickstart 
 
@@ -873,7 +874,7 @@ minimig minimig
 	.ide_writedata(ide_dout         ),
 	.ide_read     (ide_rd           ),
 	.ide_readdata (ide_c_readdata   ),
-	
+
 	.a2065_clk_ddr(DDRAM_CLK),
 	.a2065_mem_address(a2065_mem_address),
 	.a2065_mem_burstcount(a2065_mem_burstcount),
@@ -884,11 +885,11 @@ minimig minimig
 	.a2065_mem_byteenable(a2065_mem_byteenable),
 	.a2065_mem_write(a2065_mem_write),
 	.a2065_mem_waitrequest(a2065_mem_waitrequest),
-		
-	.USER_IN      (USER_IN          ),
-	.USER_OUT     (IndirectUserOutFlop),
-	.user_port_mode (user_port_mode),
-	.mister_floppy_status(mister_floppy_status)
+	
+	.USER_IN      			(USER_IN),
+	.USER_OUT     			(IndirectUserOutFlop),
+	.user_port_mode 		(user_port_mode),
+	.mister_floppy_status	(mister_floppy_status)
 );
 
 // power led control
@@ -1200,7 +1201,6 @@ always @(posedge clk_sys) begin
 	reg old_mode;
 	
 	userport_change_reset <= 0;
-	
 	last_userport_mode <= user_port_mode;
 	if (last_userport_mode != user_port_mode) userport_change_reset <= 1;
 
@@ -1326,7 +1326,6 @@ cdda #(28375160) cdda
 	.AUDIO_R(cdda_r)
 );
 
-
 wire [10:0] cdda_gain = (cdtv_mode && cdtv_cdda_volume_valid) ? {1'b0, cdtv_cdda_volume} : 11'd1023;
 
 reg signed [15:0] cdda_sl, cdda_sr;
@@ -1343,8 +1342,8 @@ reg [15:0] out_l, out_r;
 always @(posedge CLK_AUDIO) begin
 	reg [16:0] tmp_l, tmp_r;
 
-	tmp_l <= {aud_l[15],aud_l} + {toccata_aud_left[15],toccata_aud_left} + (mt32_mute ? 17'd0 : {mt32_i2s_l[15],mt32_i2s_l}) + {cdda_l[15], cdda_l};
-	tmp_r <= {aud_r[15],aud_r} + {toccata_aud_right[15],toccata_aud_right} + (mt32_mute ? 17'd0 : {mt32_i2s_r[15],mt32_i2s_r}) + {cdda_r[15], cdda_r};
+	tmp_l <= {aud_l[15],aud_l} + {toccata_aud_left[15],toccata_aud_left} + (mt32_mute ? 17'd0 : {mt32_i2s_l[15],mt32_i2s_l}) + {cdda_sl[15], cdda_sl};
+	tmp_r <= {aud_r[15],aud_r} + {toccata_aud_right[15],toccata_aud_right} + (mt32_mute ? 17'd0 : {mt32_i2s_r[15],mt32_i2s_r}) + {cdda_sr[15], cdda_sr};
 
 	// clamp the output
 	out_l <= (^tmp_l[16:15]) ? {tmp_l[16], {15{tmp_l[15]}}} : tmp_l[15:0];

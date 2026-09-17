@@ -96,7 +96,7 @@ always@(posedge clk) begin
 				  
 				  if (current_mfm[bit_pos]) floppyDriveBitCounter <= 2'h0;
 							 
-				  bit_pos <= bit_pos - 1;
+				  bit_pos <= bit_pos - 3'h1;
 				  if (bit_pos == 0) begin
 						// swap in staged
 						staged_valid <= 0;  // signal 7MHz to fetch next
@@ -112,7 +112,7 @@ always@(posedge clk) begin
 						end
 				  end
 			 end else begin
-				  bit_counter <= bit_counter - 1;
+				  bit_counter <= bit_counter - 8'h1;
 			 end
 		end else begin
 			// Pure flux mode

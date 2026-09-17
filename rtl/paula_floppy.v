@@ -487,7 +487,6 @@ assign data_out = dskbytr | dskdatr;
 
 //active whenever any drive is selected
 assign _selx = &_sel[3:0];
-reg virtualFloppyTrackReset = 0;
 
 // delayed step signal for detection of its rising edge 
 always @(posedge clk) begin
